@@ -38,6 +38,7 @@ Claude HUD gives you better insights into what's happening in your Claude Code s
 |--------------|----------------|
 | **Project name** | Always know which project you're working in |
 | **Context health** | Know exactly how full your context window is before it's too late |
+| **Usage limits** | Track your Pro/Max rate limit usage (5-hour and 7-day windows) |
 | **Tool activity** | Watch Claude read, edit, and search files as it happens |
 | **Agent tracking** | See which subagents are running and what they're doing |
 | **Todo progress** | Track task completion in real-time |
@@ -46,12 +47,13 @@ Claude HUD gives you better insights into what's happening in your Claude Code s
 
 ### Session Info
 ```
-📁 my-project | [Opus 4.5] ████░░░░░░ 19% | 2 CLAUDE.md | 8 rules | 6 MCPs | 6 hooks | ⏱️ 1m
+📁 my-project git:(main) | [Opus 4.5 | Max] ████░░░░░░ 19% | 2 CLAUDE.md | 5h: 12% | 7d: 17% | ⏱️ 1m
 ```
-- **Project** — Current working directory folder name
-- **Model** — Current model in use
+- **Project + Branch** — Current working directory and git branch
+- **Model + Plan** — Current model and subscription tier (Pro/Max/Team)
 - **Context bar** — Visual meter with color coding (green → yellow → red as it fills)
-- **Config counts** — Rules, MCPs, and hooks loaded
+- **Config counts** — CLAUDE.md files, rules, MCPs, hooks loaded
+- **Usage limits** — 5-hour and 7-day rate limit consumption (opt-in, see below)
 - **Duration** — How long the session has been running
 
 ### Tool Activity
@@ -91,6 +93,95 @@ Claude Code → stdin JSON → claude-hud → stdout → displayed in your termi
 - Native token data from Claude Code (not estimated)
 - Parses the transcript for tool/agent activity
 - Updates every ~300ms
+
+---
+
+## Usage Limits (Pro/Max/Team)
+
+Track your rate limit usage directly in the statusline.
+
+```
+📁 my-project git:(main) | [Opus 4.5 | Max] ████░░ 45% | 5h: 23% | 7d: 45%
+```
+
+When you hit 100%:
+```
+📁 my-project git:(main) | [Opus 4.5 | Max] ████░░ 45% | ⚠ Limit reached (resets 2h 15m)
+```
+
+### Enabling Usage Display
+
+Usage limits are **opt-in**. Add to your shell profile (`.bashrc`, `.zshrc`, etc.):
+
+```bash
+export CLAUDE_HUD_SHOW_USAGE=1
+```
+
+### Limitations
+
+| Limitation | Details |
+|------------|---------|
+| **Pro/Max/Team only** | API users don't have rate limits to display |
+| **60-second cache** | Data refreshes every 60 seconds, not real-time |
+| **Undocumented API** | Uses Claude Code's OAuth endpoint (may change) |
+
+### API Cost
+
+**None.** This checks your usage via Claude Code's existing OAuth token — no additional API calls or tokens consumed.
+
+### Troubleshooting
+
+If you see `usage: ⚠` (yellow warning):
+- The API call failed — enable `DEBUG=claude-hud` to see the error
+- This can happen if the undocumented API changes or is temporarily unavailable
+
+If usage doesn't appear at all:
+1. Verify `CLAUDE_HUD_SHOW_USAGE=1` is set in your environment
+2. Confirm you're logged in with Pro/Max/Team (not API key)
+3. Enable debug logging: `DEBUG=claude-hud` to see errors
+
+### Security
+
+This feature reads your existing Claude Code OAuth token from `~/.claude/.credentials.json`. The token is:
+- **Only sent to** `api.anthropic.com` (hardcoded, not configurable)
+- **Never logged** in debug output or error messages
+- **Read-only** — no modifications to your credentials
+
+The same token Claude Code already uses for authentication.
+
+---
+
+## Layout Options
+
+Customize the statusline layout with `CLAUDE_HUD_LAYOUT`:
+
+```bash
+export CLAUDE_HUD_LAYOUT=default     # Everything on line 1 (original)
+export CLAUDE_HUD_LAYOUT=condensed   # Split: model/usage top, project bottom
+export CLAUDE_HUD_LAYOUT=separators  # Split with separator lines
+```
+
+### Default Layout
+```
+[Opus 4.5 | Max] ████░░ 45% | my-project git:(main) | 1 CLAUDE.md | 2 hooks | 5h: 23% (2h 15m) | ⏱️ 12m
+✓ Read ×3 | ✓ Edit ×1
+```
+
+### Condensed Layout
+```
+[Opus 4.5 | Max] ████░░ 45% | 5h: 23% (2h 15m) | ⏱️ 12m
+✓ Read ×3 | ✓ Edit ×1
+📁 my-project git:(main) | 1 CLAUDE.md | 2 hooks
+```
+
+### Separators Layout
+```
+[Opus 4.5 | Max] ████░░ 45% | 5h: 23% (2h 15m) | ⏱️ 12m
+──────────────────────────────────────────────────────────
+✓ Read ×3 | ✓ Edit ×1
+──────────────────────────────────────────────────────────
+📁 my-project git:(main) | 1 CLAUDE.md | 2 hooks
+```
 
 ---
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSessionLine } from '../dist/render/session-line.js';
+import { renderSessionLine, renderSessionLineFull } from '../dist/render/session-line.js';
 import { renderToolsLine } from '../dist/render/tools-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
 import { renderTodosLine } from '../dist/render/todos-line.js';
@@ -26,6 +26,7 @@ function baseContext() {
     hooksCount: 0,
     sessionDuration: '',
     gitBranch: null,
+    usageData: null,
   };
 }
 
@@ -79,23 +80,23 @@ test('getContextColor returns yellow for warning threshold', () => {
   assert.equal(getContextColor(70), '\x1b[33m');
 });
 
-test('renderSessionLine includes config counts when present', () => {
+test('renderSessionLineFull includes config counts when present', () => {
   const ctx = baseContext();
   ctx.claudeMdCount = 1;
   ctx.rulesCount = 2;
   ctx.mcpCount = 3;
   ctx.hooksCount = 4;
-  const line = renderSessionLine(ctx);
+  const line = renderSessionLineFull(ctx);
   assert.ok(line.includes('CLAUDE.md'));
   assert.ok(line.includes('rules'));
   assert.ok(line.includes('MCPs'));
   assert.ok(line.includes('hooks'));
 });
 
-test('renderSessionLine displays project name from POSIX cwd', () => {
+test('renderSessionLineFull displays project name from POSIX cwd', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/Users/jarrod/my-project';
-  const line = renderSessionLine(ctx);
+  const line = renderSessionLineFull(ctx);
   assert.ok(line.includes('my-project'));
   assert.ok(!line.includes('/Users/jarrod'));
 });
@@ -122,11 +123,11 @@ test('renderSessionLine omits project name when cwd is undefined', () => {
   assert.ok(line.includes('[Opus]'));
 });
 
-test('renderSessionLine displays git branch when present', () => {
+test('renderSessionLineFull displays git branch when present', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
   ctx.gitBranch = 'main';
-  const line = renderSessionLine(ctx);
+  const line = renderSessionLineFull(ctx);
   assert.ok(line.includes('git:('));
   assert.ok(line.includes('main'));
 });
@@ -139,11 +140,11 @@ test('renderSessionLine omits git branch when null', () => {
   assert.ok(!line.includes('git:('));
 });
 
-test('renderSessionLine displays branch with slashes', () => {
+test('renderSessionLineFull displays branch with slashes', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
   ctx.gitBranch = 'feature/add-auth';
-  const line = renderSessionLine(ctx);
+  const line = renderSessionLineFull(ctx);
   assert.ok(line.includes('git:('));
   assert.ok(line.includes('feature/add-auth'));
 });
@@ -359,4 +360,117 @@ test('renderTodosLine returns null when no todos exist', () => {
 test('renderToolsLine returns null when no tools exist', () => {
   const ctx = baseContext();
   assert.equal(renderToolsLine(ctx), null);
+});
+
+// Usage display tests
+test('renderSessionLine displays plan name in model bracket', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 23,
+    sevenDay: 45,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('Opus'), 'should include model name');
+  assert.ok(line.includes('Max'), 'should include plan name');
+});
+
+test('renderSessionLine displays usage percentages (7d hidden when low)', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 6,
+    sevenDay: 13,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(!line.includes('7d:'), 'should NOT include 7d when below 80%');
+  assert.ok(line.includes('6%'), 'should include 5h percentage');
+});
+
+test('renderSessionLine shows 7d when approaching limit (>=80%)', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('7d:'), 'should include 7d when >= 80%');
+  assert.ok(line.includes('85%'), 'should include 7d percentage');
+});
+
+test('renderSessionLine shows 5hr reset countdown', () => {
+  const ctx = baseContext();
+  const resetTime = new Date(Date.now() + 7200000); // 2 hours from now
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 20,
+    fiveHourResetAt: resetTime,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('2h'), 'should include reset countdown');
+});
+
+test('renderSessionLine displays limit reached warning', () => {
+  const ctx = baseContext();
+  const resetTime = new Date(Date.now() + 3600000); // 1 hour from now
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 100,
+    sevenDay: 45,
+    fiveHourResetAt: resetTime,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('Limit reached'), 'should show limit reached');
+  assert.ok(line.includes('resets'), 'should show reset time');
+});
+
+test('renderSessionLine displays -- for null usage values', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('--'), 'should show -- for null values');
+});
+
+test('renderSessionLine omits usage when usageData is null', () => {
+  const ctx = baseContext();
+  ctx.usageData = null;
+  const line = renderSessionLine(ctx);
+  assert.ok(!line.includes('5h:'), 'should not include 5h label');
+  assert.ok(!line.includes('7d:'), 'should not include 7d label');
+});
+
+test('renderSessionLine displays warning when API is unavailable', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    apiUnavailable: true,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('usage:'), 'should show usage label');
+  assert.ok(line.includes('⚠'), 'should show warning indicator');
+  assert.ok(!line.includes('5h:'), 'should not show 5h when API unavailable');
 });

@@ -39,6 +39,26 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
+/** Usage window data from the OAuth API */
+export interface UsageWindow {
+  utilization: number | null;  // 0-100 percentage, null if unavailable
+  resetAt: Date | null;
+}
+
+export interface UsageData {
+  planName: string | null;  // 'Max', 'Pro', or null for API users
+  fiveHour: number | null;  // 0-100 percentage, null if unavailable
+  sevenDay: number | null;  // 0-100 percentage, null if unavailable
+  fiveHourResetAt: Date | null;
+  sevenDayResetAt: Date | null;
+  apiUnavailable?: boolean; // true if API call failed (user should check DEBUG logs)
+}
+
+/** Check if usage limit is reached (either window at 100%) */
+export function isLimitReached(data: UsageData): boolean {
+  return data.fiveHour === 100 || data.sevenDay === 100;
+}
+
 export interface TranscriptData {
   tools: ToolEntry[];
   agents: AgentEntry[];
@@ -55,4 +75,5 @@ export interface RenderContext {
   hooksCount: number;
   sessionDuration: string;
   gitBranch: string | null;
+  usageData: UsageData | null;
 }

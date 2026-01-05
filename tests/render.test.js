@@ -25,6 +25,7 @@ function baseContext() {
     mcpCount: 0,
     hooksCount: 0,
     sessionDuration: '',
+    gitBranch: null,
   };
 }
 
@@ -35,14 +36,6 @@ test('renderSessionLine adds token breakdown when context is high', () => {
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('in:'), 'expected token breakdown');
   assert.ok(line.includes('cache:'), 'expected cache breakdown');
-});
-
-test('renderSessionLine shows compact warning at critical threshold', () => {
-  const ctx = baseContext();
-  // For 96%: (tokens + 45000) / 200000 = 0.96 → tokens = 147000
-  ctx.stdin.context_window.current_usage.input_tokens = 147000;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('COMPACT'));
 });
 
 test('renderSessionLine includes duration and formats large tokens', () => {
@@ -97,6 +90,62 @@ test('renderSessionLine includes config counts when present', () => {
   assert.ok(line.includes('rules'));
   assert.ok(line.includes('MCPs'));
   assert.ok(line.includes('hooks'));
+});
+
+test('renderSessionLine displays project name from POSIX cwd', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/Users/jarrod/my-project';
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('my-project'));
+  assert.ok(!line.includes('/Users/jarrod'));
+});
+
+test('renderSessionLine displays project name from Windows cwd', { skip: process.platform !== 'win32' }, () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = 'C:\\Users\\jarrod\\my-project';
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('my-project'));
+  assert.ok(!line.includes('C:\\'));
+});
+
+test('renderSessionLine handles root path gracefully', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/';
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('[Opus]'));
+});
+
+test('renderSessionLine omits project name when cwd is undefined', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = undefined;
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('[Opus]'));
+});
+
+test('renderSessionLine displays git branch when present', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitBranch = 'main';
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('git:('));
+  assert.ok(line.includes('main'));
+});
+
+test('renderSessionLine omits git branch when null', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitBranch = null;
+  const line = renderSessionLine(ctx);
+  assert.ok(!line.includes('git:('));
+});
+
+test('renderSessionLine displays branch with slashes', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitBranch = 'feature/add-auth';
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('git:('));
+  assert.ok(line.includes('feature/add-auth'));
 });
 
 test('renderToolsLine renders running and completed tools', () => {

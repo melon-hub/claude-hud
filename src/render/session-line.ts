@@ -1,6 +1,7 @@
+import path from 'node:path';
 import type { RenderContext } from '../types.js';
 import { getContextPercent, getModelName } from '../stdin.js';
-import { coloredBar, cyan, dim, red, getContextColor, RESET } from './colors.js';
+import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET } from './colors.js';
 
 export function renderSessionLine(ctx: RenderContext): string {
   const model = getModelName(ctx.stdin);
@@ -10,6 +11,12 @@ export function renderSessionLine(ctx: RenderContext): string {
   const parts: string[] = [];
 
   parts.push(`${cyan(`[${model}]`)} ${bar} ${getContextColor(percent)}${percent}%${RESET}`);
+
+  if (ctx.stdin.cwd) {
+    const projectName = path.basename(ctx.stdin.cwd) || ctx.stdin.cwd;
+    const branchPart = ctx.gitBranch ? ` ${magenta('git:(')}${cyan(ctx.gitBranch)}${magenta(')')}` : '';
+    parts.push(`${yellow(projectName)}${branchPart}`);
+  }
 
   if (ctx.claudeMdCount > 0) {
     parts.push(dim(`${ctx.claudeMdCount} CLAUDE.md`));
@@ -40,10 +47,6 @@ export function renderSessionLine(ctx: RenderContext): string {
       const cache = formatTokens((usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0));
       line += dim(` (in: ${input}, cache: ${cache})`);
     }
-  }
-
-  if (percent >= 95) {
-    line += ` ${red('⚠️ COMPACT')}`;
   }
 
   return line;

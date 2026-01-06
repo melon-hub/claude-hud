@@ -3,6 +3,7 @@ import { parseTranscript } from './transcript.js';
 import { render } from './render/index.js';
 import { countConfigs } from './config-reader.js';
 import { getGitStatus } from './git.js';
+import { getUsage } from './usage-api.js';
 import { loadConfig } from './config.js';
 import type { RenderContext } from './types.js';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,7 @@ export type MainDeps = {
   parseTranscript: typeof parseTranscript;
   countConfigs: typeof countConfigs;
   getGitStatus: typeof getGitStatus;
+  getUsage: typeof getUsage;
   loadConfig: typeof loadConfig;
   render: typeof render;
   now: () => number;
@@ -24,6 +26,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     parseTranscript,
     countConfigs,
     getGitStatus,
+    getUsage,
     loadConfig,
     render,
     now: () => Date.now(),
@@ -49,6 +52,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       ? await deps.getGitStatus(stdin.cwd)
       : null;
 
+    const usageData = await deps.getUsage();
+
     const sessionDuration = formatSessionDuration(transcript.sessionStart, deps.now);
 
     const ctx: RenderContext = {
@@ -60,6 +65,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       hooksCount,
       sessionDuration,
       gitStatus,
+      usageData,
       config,
     };
 

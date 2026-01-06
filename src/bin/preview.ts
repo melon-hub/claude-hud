@@ -37,6 +37,7 @@ function createMockContext(config: Partial<HudConfig>): RenderContext {
       showConfigCounts: config.display?.showConfigCounts ?? true,
       showDuration: config.display?.showDuration ?? true,
       showTokenBreakdown: config.display?.showTokenBreakdown ?? true,
+      showUsage: config.display?.showUsage ?? true,
       showTools: config.display?.showTools ?? true,
       showAgents: config.display?.showAgents ?? true,
       showTodos: config.display?.showTodos ?? true,
@@ -141,6 +142,7 @@ function createMockContext(config: Partial<HudConfig>): RenderContext {
           behind: fullConfig.gitStatus.showAheadBehind ? 1 : 0,
         }
       : null,
+    usageData: null,
     config: fullConfig,
   };
 }

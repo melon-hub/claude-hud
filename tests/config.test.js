@@ -125,9 +125,9 @@ describe('display configuration', () => {
     });
   });
 
-  test('has exactly 8 display options', () => {
+  test('has exactly 9 display options', () => {
     const optionCount = Object.keys(DEFAULT_CONFIG.display).length;
-    assert.equal(optionCount, 8);
+    assert.equal(optionCount, 9);
   });
 });
 
@@ -153,6 +153,7 @@ describe('loadConfig behavior', () => {
     assert.ok('showConfigCounts' in config.display);
     assert.ok('showDuration' in config.display);
     assert.ok('showTokenBreakdown' in config.display);
+    assert.ok('showUsage' in config.display);
     assert.ok('showTools' in config.display);
     assert.ok('showAgents' in config.display);
     assert.ok('showTodos' in config.display);

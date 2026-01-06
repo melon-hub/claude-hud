@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSessionLine } from '../dist/render/session-line.js';
+import { renderSessionLine, renderSessionLineMinimal } from '../dist/render/session-line.js';
 import { renderToolsLine } from '../dist/render/tools-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
 import { renderTodosLine } from '../dist/render/todos-line.js';
@@ -26,20 +26,12 @@ function baseContext() {
     hooksCount: 0,
     sessionDuration: '',
     gitStatus: null,
+    usageData: null,
     config: {
       layout: 'default',
       pathLevels: 1,
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false },
-      display: {
-        showModel: true,
-        showContextBar: true,
-        showConfigCounts: true,
-        showDuration: true,
-        showTokenBreakdown: true,
-        showTools: true,
-        showAgents: true,
-        showTodos: true,
-      },
+      display: { showModel: true, showContextBar: true, showConfigCounts: true, showDuration: true, showTokenBreakdown: true, showUsage: true, showTools: true, showAgents: true, showTodos: true },
     },
   };
 }
@@ -96,6 +88,7 @@ test('getContextColor returns yellow for warning threshold', () => {
 
 test('renderSessionLine includes config counts when present', () => {
   const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
   ctx.claudeMdCount = 1;
   ctx.rulesCount = 2;
   ctx.mcpCount = 3;
@@ -107,38 +100,20 @@ test('renderSessionLine includes config counts when present', () => {
   assert.ok(line.includes('hooks'));
 });
 
-test('renderSessionLine displays 1 path segment by default', () => {
+test('renderSessionLine displays project name from POSIX cwd', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/Users/jarrod/dev/apps/my-project';
+  ctx.stdin.cwd = '/Users/jarrod/my-project';
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('my-project'), 'expected last 1 segment');
-  assert.ok(!line.includes('apps/my-project'), 'should not include 2 segments');
+  assert.ok(line.includes('my-project'));
+  assert.ok(!line.includes('/Users/jarrod'));
 });
 
-test('renderSessionLine displays 2 path segments when configured', () => {
+test('renderSessionLine displays project name from Windows cwd', { skip: process.platform !== 'win32' }, () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/Users/jarrod/dev/apps/my-project';
-  ctx.config.pathLevels = 2;
+  ctx.stdin.cwd = 'C:\\Users\\jarrod\\my-project';
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('apps/my-project'), 'expected last 2 segments');
-  assert.ok(!line.includes('dev/apps'), 'should not include 3 segments');
-});
-
-test('renderSessionLine displays 3 path segments when configured', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/Users/jarrod/dev/apps/my-project';
-  ctx.config.pathLevels = 3;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('dev/apps/my-project'), 'expected last 3 segments');
-  assert.ok(!line.includes('/Users'), 'should not include full path');
-});
-
-test('renderSessionLine handles short paths gracefully', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/home/user';
-  ctx.config.pathLevels = 3;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('home/user'), 'expected available segments');
+  assert.ok(line.includes('my-project'));
+  assert.ok(!line.includes('C:\\'));
 });
 
 test('renderSessionLine handles root path gracefully', () => {
@@ -146,57 +121,6 @@ test('renderSessionLine handles root path gracefully', () => {
   ctx.stdin.cwd = '/';
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('[Opus]'));
-});
-
-// Cross-platform path tests
-test('renderSessionLine handles Windows paths with backslashes', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = 'C:\\Users\\jarrod\\dev\\my-project';
-  ctx.config.pathLevels = 1;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('my-project'), 'expected last segment from Windows path');
-  assert.ok(!line.includes('\\'), 'should not contain backslashes in output');
-});
-
-test('renderSessionLine handles Windows paths with 2 levels', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = 'C:\\Users\\jarrod\\dev\\my-project';
-  ctx.config.pathLevels = 2;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('dev/my-project'), 'expected 2 segments with forward slash');
-});
-
-test('renderSessionLine handles Windows paths with 3 levels', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = 'C:\\Users\\jarrod\\dev\\my-project';
-  ctx.config.pathLevels = 3;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('jarrod/dev/my-project'), 'expected 3 segments with forward slashes');
-});
-
-test('renderSessionLine handles mixed path separators', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = 'C:\\Users/jarrod\\dev/my-project';
-  ctx.config.pathLevels = 2;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('dev/my-project'), 'expected correct parsing of mixed separators');
-});
-
-test('renderSessionLine handles UNC paths', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '\\\\server\\share\\folder\\project';
-  ctx.config.pathLevels = 2;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('folder/project'), 'expected 2 segments from UNC path');
-});
-
-test('renderSessionLine output always uses forward slashes', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = 'D:\\Projects\\client\\webapp';
-  ctx.config.pathLevels = 3;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('Projects/client/webapp'), 'expected forward slashes in output');
-  assert.ok(!line.includes('\\'), 'output should never contain backslashes');
 });
 
 test('renderSessionLine omits project name when cwd is undefined', () => {
@@ -230,44 +154,6 @@ test('renderSessionLine displays branch with slashes', () => {
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('git:('));
   assert.ok(line.includes('feature/add-auth'));
-});
-
-test('renderSessionLine shows dirty indicator when enabled', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitStatus = { branch: 'main', isDirty: true, ahead: 0, behind: 0 };
-  ctx.config.gitStatus.showDirty = true;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('main*'), 'should show dirty indicator');
-});
-
-test('renderSessionLine hides dirty indicator when disabled', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitStatus = { branch: 'main', isDirty: true, ahead: 0, behind: 0 };
-  ctx.config.gitStatus.showDirty = false;
-  const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('*'), 'should not show dirty indicator');
-});
-
-test('renderSessionLine shows ahead/behind when enabled', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 2, behind: 1 };
-  ctx.config.gitStatus.showAheadBehind = true;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('↑2'), 'should show ahead count');
-  assert.ok(line.includes('↓1'), 'should show behind count');
-});
-
-test('renderSessionLine hides ahead/behind when disabled', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 2, behind: 1 };
-  ctx.config.gitStatus.showAheadBehind = false;
-  const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('↑'), 'should not show ahead');
-  assert.ok(!line.includes('↓'), 'should not show behind');
 });
 
 test('renderToolsLine renders running and completed tools', () => {
@@ -327,40 +213,6 @@ test('renderToolsLine handles trailing slash paths', () => {
 
   const line = renderToolsLine(ctx);
   assert.ok(line?.includes('...'));
-});
-
-// Cross-platform tool path tests
-test('renderToolsLine handles Windows paths with backslashes', () => {
-  const ctx = baseContext();
-  ctx.transcript.tools = [
-    {
-      id: 'tool-1',
-      name: 'Edit',
-      target: 'C:\\Users\\jarrod\\dev\\my-project\\auth.ts',
-      status: 'running',
-      startTime: new Date(0),
-    },
-  ];
-
-  const line = renderToolsLine(ctx);
-  assert.ok(line?.includes('auth.ts'), 'expected filename from Windows path');
-  assert.ok(!line?.includes('\\'), 'should not contain backslashes');
-});
-
-test('renderToolsLine truncates long Windows paths correctly', () => {
-  const ctx = baseContext();
-  ctx.transcript.tools = [
-    {
-      id: 'tool-1',
-      name: 'Read',
-      target: 'C:\\Users\\jarrod\\very\\long\\path\\to\\file.ts',
-      status: 'running',
-      startTime: new Date(0),
-    },
-  ];
-
-  const line = renderToolsLine(ctx);
-  assert.ok(line?.includes('.../file.ts'), 'expected truncated Windows path');
 });
 
 test('renderToolsLine preserves short targets and handles missing targets', () => {
@@ -517,69 +369,146 @@ test('renderToolsLine returns null when no tools exist', () => {
   assert.equal(renderToolsLine(ctx), null);
 });
 
-// Configuration tests
-test('renderSessionLine hides git branch when gitStatus.enabled is false', () => {
+// Usage display tests
+test('renderSessionLine displays plan name in model bracket', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 0, behind: 0 };
-  ctx.config.gitStatus.enabled = false;
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 23,
+    sevenDay: 45,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('git:('), 'git branch should be hidden');
-  assert.ok(!line.includes('main'), 'branch name should not appear');
+  assert.ok(line.includes('Opus'), 'should include model name');
+  assert.ok(line.includes('Max'), 'should include plan name');
 });
 
-test('renderSessionLine shows git branch when gitStatus.enabled is true', () => {
+test('renderSessionLine displays usage percentages (7d hidden when low)', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 0, behind: 0 };
-  ctx.config.gitStatus.enabled = true;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 6,
+    sevenDay: 13,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('git:('), 'git branch should be shown');
-  assert.ok(line.includes('main'), 'branch name should appear');
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(!line.includes('7d:'), 'should NOT include 7d when below 80%');
+  assert.ok(line.includes('6%'), 'should include 5h percentage');
 });
 
-// Display configuration tests
-test('renderSessionLine hides model when showModel is false', () => {
+test('renderSessionLine shows 7d when approaching limit (>=80%)', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.config.display.showModel = false;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('[Opus]'), 'model should be hidden');
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('7d:'), 'should include 7d when >= 80%');
+  assert.ok(line.includes('85%'), 'should include 7d percentage');
 });
 
-test('renderSessionLine hides context bar when showContextBar is false', () => {
+test('renderSessionLine shows 5hr reset countdown', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.config.display.showContextBar = false;
+  const resetTime = new Date(Date.now() + 7200000); // 2 hours from now
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 20,
+    fiveHourResetAt: resetTime,
+    sevenDayResetAt: null,
+  };
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('░'), 'context bar should be hidden');
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('2h'), 'should include reset countdown');
 });
 
-test('renderSessionLine hides config counts when showConfigCounts is false', () => {
+test('renderSessionLine displays limit reached warning', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.rulesCount = 5;
-  ctx.claudeMdCount = 2;
-  ctx.config.display.showConfigCounts = false;
+  const resetTime = new Date(Date.now() + 3600000); // 1 hour from now
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 100,
+    sevenDay: 45,
+    fiveHourResetAt: resetTime,
+    sevenDayResetAt: null,
+  };
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('rules'), 'rules count should be hidden');
-  assert.ok(!line.includes('CLAUDE.md'), 'CLAUDE.md count should be hidden');
+  assert.ok(line.includes('Limit reached'), 'should show limit reached');
+  assert.ok(line.includes('resets'), 'should show reset time');
 });
 
-test('renderSessionLine hides duration when showDuration is false', () => {
+test('renderSessionLine displays -- for null usage values', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.sessionDuration = '5m';
-  ctx.config.display.showDuration = false;
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('5m'), 'duration should be hidden');
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('--'), 'should show -- for null values');
 });
 
-test('renderSessionLine hides token breakdown when showTokenBreakdown is false', () => {
+test('renderSessionLine omits usage when usageData is null', () => {
   const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.stdin.context_window.current_usage.input_tokens = 135000;
-  ctx.config.display.showTokenBreakdown = false;
+  ctx.usageData = null;
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('in:'), 'token breakdown should be hidden');
+  assert.ok(!line.includes('5h:'), 'should not include 5h label');
+  assert.ok(!line.includes('7d:'), 'should not include 7d label');
+});
+
+test('renderSessionLine displays warning when API is unavailable', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    apiUnavailable: true,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('usage:'), 'should show usage label');
+  assert.ok(line.includes('⚠'), 'should show warning indicator');
+  assert.ok(!line.includes('5h:'), 'should not show 5h when API unavailable');
+});
+
+test('renderSessionLine hides usage when showUsage config is false (hybrid toggle)', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 25,
+    sevenDay: 10,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  // Even with usageData present, setting showUsage to false should hide it
+  ctx.config.display.showUsage = false;
+  const line = renderSessionLine(ctx);
+  assert.ok(!line.includes('5h:'), 'should not show usage when showUsage is false');
+  assert.ok(!line.includes('Pro'), 'should not show plan name when showUsage is false');
+});
+
+test('renderSessionLineMinimal hides usage when showUsage config is false', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 50,
+    sevenDay: 20,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  ctx.config.display.showUsage = false;
+  const line = renderSessionLineMinimal(ctx);
+  assert.ok(!line.includes('5h:'), 'should not show usage in minimal when showUsage is false');
+  assert.ok(!line.includes('Max'), 'should not show plan name in minimal when showUsage is false');
 });

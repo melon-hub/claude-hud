@@ -21,6 +21,7 @@ interface HudConfig {
     showConfigCounts: boolean;
     showDuration: boolean;
     showTokenBreakdown: boolean;
+    showUsage: boolean;
     showTools: boolean;
     showAgents: boolean;
     showTodos: boolean;
@@ -41,6 +42,7 @@ const DEFAULT_CONFIG: HudConfig = {
     showConfigCounts: true,
     showDuration: true,
     showTokenBreakdown: true,
+    showUsage: true,
     showTools: true,
     showAgents: true,
     showTodos: true,

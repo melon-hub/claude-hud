@@ -19,10 +19,10 @@ These are always enabled and NOT configurable:
 
 ## Two Flows Based on Config State
 
-### Flow A: New User (NO config exists)
+### Flow A: New User (no config)
 Questions: **Layout → Preset → Turn Off → Turn On**
 
-### Flow B: Returning User (config EXISTS)
+### Flow B: Update Config (config exists)
 Questions: **Turn Off → Turn On → Git Style → Layout/Reset**
 
 ---
@@ -72,7 +72,7 @@ If preset has all items OFF (Minimal), Q3 shows "Nothing to disable - Minimal pr
 
 ---
 
-## Flow B: Returning User (4 Questions)
+## Flow B: Update Config (4 Questions)
 
 ### Q1: Turn Off
 - header: "Turn Off"

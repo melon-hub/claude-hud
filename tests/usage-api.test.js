@@ -1,21 +1,34 @@
-import { test, describe, beforeEach } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { getUsage, clearCache } from '../dist/usage-api.js';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
-// Helper to create mock credentials file content
-function mockCredentials(overrides = {}) {
-  return JSON.stringify({
+let tempHome = null;
+
+async function createTempHome() {
+  return await mkdtemp(path.join(tmpdir(), 'claude-hud-usage-'));
+}
+
+async function writeCredentials(homeDir, credentials) {
+  const credDir = path.join(homeDir, '.claude');
+  await mkdir(credDir, { recursive: true });
+  await writeFile(path.join(credDir, '.credentials.json'), JSON.stringify(credentials), 'utf8');
+}
+
+function buildCredentials(overrides = {}) {
+  return {
     claudeAiOauth: {
       accessToken: 'test-token',
       subscriptionType: 'claude_pro_2024',
       expiresAt: Date.now() + 3600000, // 1 hour from now
       ...overrides,
     },
-  });
+  };
 }
 
-// Helper to create mock API response
-function mockApiResponse(overrides = {}) {
+function buildApiResponse(overrides = {}) {
   return {
     five_hour: {
       utilization: 25,
@@ -30,103 +43,216 @@ function mockApiResponse(overrides = {}) {
 }
 
 describe('getUsage', () => {
-  beforeEach(() => {
-    // Clear cache before each test
-    clearCache();
+  beforeEach(async () => {
+    tempHome = await createTempHome();
+    clearCache(tempHome);
+  });
+
+  afterEach(async () => {
+    if (tempHome) {
+      await rm(tempHome, { recursive: true, force: true });
+      tempHome = null;
+    }
   });
 
   test('returns null when credentials file does not exist', async () => {
+    let fetchCalls = 0;
     const result = await getUsage({
-      homeDir: () => '/nonexistent',
-      fetchApi: async () => null,
-      now: () => Date.now(),
+      homeDir: () => tempHome,
+      fetchApi: async () => {
+        fetchCalls += 1;
+        return null;
+      },
+      now: () => 1000,
     });
 
     assert.equal(result, null);
+    assert.equal(fetchCalls, 0);
   });
 
   test('returns null when claudeAiOauth is missing', async () => {
+    await writeCredentials(tempHome, {});
+    let fetchCalls = 0;
     const result = await getUsage({
-      homeDir: () => '/mock',
-      fetchApi: async () => mockApiResponse(),
-      now: () => Date.now(),
+      homeDir: () => tempHome,
+      fetchApi: async () => {
+        fetchCalls += 1;
+        return buildApiResponse();
+      },
+      now: () => 1000,
     });
 
-    // Will fail to find credentials, return null
     assert.equal(result, null);
+    assert.equal(fetchCalls, 0);
   });
 
   test('returns null when token is expired', async () => {
-    // Create a mock that simulates expired token
-    // Since we can't actually write files, we test the flow
+    await writeCredentials(tempHome, buildCredentials({ expiresAt: 500 }));
+    let fetchCalls = 0;
     const result = await getUsage({
-      homeDir: () => '/mock',
-      fetchApi: async () => mockApiResponse(),
-      now: () => Date.now(),
+      homeDir: () => tempHome,
+      fetchApi: async () => {
+        fetchCalls += 1;
+        return buildApiResponse();
+      },
+      now: () => 1000,
     });
 
     assert.equal(result, null);
+    assert.equal(fetchCalls, 0);
   });
 
   test('returns null for API users (no subscriptionType)', async () => {
-    // API users have subscriptionType containing 'api' or missing
+    await writeCredentials(tempHome, buildCredentials({ subscriptionType: 'api' }));
+    let fetchCalls = 0;
     const result = await getUsage({
-      homeDir: () => '/mock',
-      fetchApi: async () => mockApiResponse(),
-      now: () => Date.now(),
+      homeDir: () => tempHome,
+      fetchApi: async () => {
+        fetchCalls += 1;
+        return buildApiResponse();
+      },
+      now: () => 1000,
     });
 
     assert.equal(result, null);
+    assert.equal(fetchCalls, 0);
   });
 
-  test('correctly parses plan names', async () => {
-    // We can't easily mock file reading, but we can test the exported clearCache
-    // The plan name parsing is tested via integration tests in render.test.js
-    clearCache();
-    assert.ok(true, 'clearCache works');
+  test('parses plan name and usage data', async () => {
+    await writeCredentials(tempHome, buildCredentials({ subscriptionType: 'claude_pro_2024' }));
+    let fetchCalls = 0;
+    const result = await getUsage({
+      homeDir: () => tempHome,
+      fetchApi: async () => {
+        fetchCalls += 1;
+        return buildApiResponse();
+      },
+      now: () => 1000,
+    });
+
+    assert.equal(fetchCalls, 1);
+    assert.equal(result?.planName, 'Pro');
+    assert.equal(result?.fiveHour, 25);
+    assert.equal(result?.sevenDay, 10);
   });
 
-  test('returns fallback with apiUnavailable when API call fails', async () => {
-    // This test verifies the behavior described in the code
-    // When API fails, it should return apiUnavailable: true
-    // We can't fully test without mocking fs, but the logic is:
-    // if (!apiResponse) return { apiUnavailable: true, ... }
-    assert.ok(true, 'API failure handling verified in code review');
+  test('parses Team plan name', async () => {
+    await writeCredentials(tempHome, buildCredentials({ subscriptionType: 'claude_team_2024' }));
+    const result = await getUsage({
+      homeDir: () => tempHome,
+      fetchApi: async () => buildApiResponse(),
+      now: () => 1000,
+    });
+
+    assert.equal(result?.planName, 'Team');
   });
 
-  test('uses cached result within TTL', async () => {
-    // Clear cache first
-    clearCache();
+  test('returns apiUnavailable and caches failures', async () => {
+    await writeCredentials(tempHome, buildCredentials());
+    let fetchCalls = 0;
+    let nowValue = 1000;
+    const fetchApi = async () => {
+      fetchCalls += 1;
+      return null;
+    };
 
-    // Cache behavior: if cachedUsage exists and within TTL, return cached
-    // Since we can't mock fs.readFileSync, verify the export exists
-    assert.equal(typeof clearCache, 'function');
-  });
+    const first = await getUsage({
+      homeDir: () => tempHome,
+      fetchApi,
+      now: () => nowValue,
+    });
+    assert.equal(first?.apiUnavailable, true);
+    assert.equal(fetchCalls, 1);
 
-  test('clearCache resets the cache', async () => {
-    // This is tested in render.test.js as well, but verify the function exists
-    clearCache();
-    assert.ok(true, 'clearCache executed without error');
+    nowValue += 10_000;
+    const cached = await getUsage({
+      homeDir: () => tempHome,
+      fetchApi,
+      now: () => nowValue,
+    });
+    assert.equal(cached?.apiUnavailable, true);
+    assert.equal(fetchCalls, 1);
+
+    nowValue += 6_000;
+    const second = await getUsage({
+      homeDir: () => tempHome,
+      fetchApi,
+      now: () => nowValue,
+    });
+    assert.equal(second?.apiUnavailable, true);
+    assert.equal(fetchCalls, 2);
   });
 });
 
 describe('getUsage caching behavior', () => {
-  beforeEach(() => {
-    clearCache();
+  beforeEach(async () => {
+    tempHome = await createTempHome();
+    clearCache(tempHome);
+  });
+
+  afterEach(async () => {
+    if (tempHome) {
+      await rm(tempHome, { recursive: true, force: true });
+      tempHome = null;
+    }
   });
 
   test('cache expires after 60 seconds for success', async () => {
-    // The CACHE_TTL_MS constant is 60_000 (60 seconds)
-    // Verify the constant exists by checking behavior
-    clearCache();
-    assert.ok(true, 'Cache TTL is 60 seconds for successful responses');
+    await writeCredentials(tempHome, buildCredentials());
+    let fetchCalls = 0;
+    let nowValue = 1000;
+    const fetchApi = async () => {
+      fetchCalls += 1;
+      return buildApiResponse();
+    };
+
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
+    assert.equal(fetchCalls, 1);
+
+    nowValue += 30_000;
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
+    assert.equal(fetchCalls, 1);
+
+    nowValue += 31_000;
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
+    assert.equal(fetchCalls, 2);
   });
 
   test('cache expires after 15 seconds for failures', async () => {
-    // The CACHE_FAILURE_TTL_MS constant is 15_000 (15 seconds)
-    // This prevents retry storms when API is down
-    clearCache();
-    assert.ok(true, 'Cache failure TTL is 15 seconds');
+    await writeCredentials(tempHome, buildCredentials());
+    let fetchCalls = 0;
+    let nowValue = 1000;
+    const fetchApi = async () => {
+      fetchCalls += 1;
+      return null;
+    };
+
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
+    assert.equal(fetchCalls, 1);
+
+    nowValue += 10_000;
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
+    assert.equal(fetchCalls, 1);
+
+    nowValue += 6_000;
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
+    assert.equal(fetchCalls, 2);
+  });
+
+  test('clearCache removes file-based cache', async () => {
+    await writeCredentials(tempHome, buildCredentials());
+    let fetchCalls = 0;
+    const fetchApi = async () => {
+      fetchCalls += 1;
+      return buildApiResponse();
+    };
+
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => 1000 });
+    assert.equal(fetchCalls, 1);
+
+    clearCache(tempHome);
+    await getUsage({ homeDir: () => tempHome, fetchApi, now: () => 2000 });
+    assert.equal(fetchCalls, 2);
   });
 });
 

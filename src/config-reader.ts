@@ -1,14 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { createDebug } from './debug.js';
 
-// Debug logging (enabled via DEBUG=claude-hud or DEBUG=*)
-const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
-function debug(msg: string, ...args: unknown[]): void {
-  if (DEBUG) {
-    console.error(`[claude-hud:config] ${msg}`, ...args);
-  }
-}
+const debug = createDebug('config');
 
 export interface ConfigCounts {
   claudeMdCount: number;

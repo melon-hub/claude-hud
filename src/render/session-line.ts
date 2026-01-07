@@ -88,7 +88,7 @@ export function renderSessionLine(ctx: RenderContext): string {
     }
   }
 
-  // Usage limits display (requires both env var opt-in AND config enabled)
+  // Usage limits display (shown when enabled in config)
   if (display?.showUsage !== false && ctx.usageData?.planName) {
     if (ctx.usageData.apiUnavailable) {
       parts.push(yellow(`usage: ⚠`));

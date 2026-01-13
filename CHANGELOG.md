@@ -2,6 +2,60 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Context percentage now uses percentage-based buffer (22.5%) instead of hardcoded 45k tokens
+  - Scales correctly for enterprise context windows (>200k)
+- Add `display.autocompactBuffer` config option (`'enabled'` | `'disabled'`, default: `'enabled'`)
+  - `'enabled'`: Shows buffered % (matches `/context` when autocompact ON) - **default**
+  - `'disabled'`: Shows raw % (matches `/context` when autocompact OFF)
+
+### Credits
+- Ideas from [#30](https://github.com/jarrodwatts/claude-hud/pull/30) ([@r-firpo](https://github.com/r-firpo)), [#43](https://github.com/jarrodwatts/claude-hud/pull/43) ([@yansircc](https://github.com/yansircc)), [#49](https://github.com/jarrodwatts/claude-hud/pull/49) ([@StephenJoshii](https://github.com/StephenJoshii)) informed the final solution
+
+---
+
+## [0.0.4] - 2026-01-07
+
+### Added
+- Configuration system via `~/.claude/plugins/claude-hud/config.json`
+- Interactive `/claude-hud:configure` skill for in-Claude configuration
+- Usage API integration showing 5h/7d rate limits (Pro/Max/Team)
+- Git status with dirty indicator and ahead/behind counts
+- Configurable path levels (1-3 directory segments)
+- Layout options: default and separators
+- Display toggles for all HUD elements
+
+### Fixed
+- Git status spacing: `main*↑2↓1` → `main* ↑2 ↓1`
+- Root path rendering: show `/` instead of empty
+- Windows path normalization
+
+### Credits
+- Config system, layouts, path levels, git toggle by @Tsopic (#32)
+- Usage API, configure skill, bug fixes by @melon-hub (#34)
+
+---
+
+## [0.0.3] - 2025-01-06
+
+### Added
+- Display git branch name in session line (#23)
+- Display project folder name in session line (#18)
+- Dynamic platform and runtime detection in setup command (#24)
+
+### Changed
+- Remove redundant COMPACT warning at high context usage (#27)
+
+### Fixed
+- Skip auto-review for fork PRs to prevent CI failures (#25)
+
+### Dependencies
+- Bump @types/node from 20.19.27 to 25.0.3 (#2)
+
+---
+
 ## [0.0.2] - 2025-01-04
 
 ### Security

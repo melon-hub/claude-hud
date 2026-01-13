@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { render } from '../dist/render/index.js';
 import { renderSessionLine } from '../dist/render/session-line.js';
 import { renderToolsLine } from '../dist/render/tools-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
@@ -25,7 +26,14 @@ function baseContext() {
     mcpCount: 0,
     hooksCount: 0,
     sessionDuration: '',
-    gitBranch: null,
+    gitStatus: null,
+    usageData: null,
+    config: {
+      layout: 'default',
+      pathLevels: 1,
+      gitStatus: { enabled: true, showDirty: true, showAheadBehind: false },
+      display: { showModel: true, showContextBar: true, showConfigCounts: true, showDuration: true, showTokenBreakdown: true, showUsage: true, showTools: true, showAgents: true, showTodos: true, autocompactBuffer: 'enabled' },
+    },
   };
 }
 
@@ -81,6 +89,7 @@ test('getContextColor returns yellow for warning threshold', () => {
 
 test('renderSessionLine includes config counts when present', () => {
   const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
   ctx.claudeMdCount = 1;
   ctx.rulesCount = 2;
   ctx.mcpCount = 3;
@@ -125,7 +134,7 @@ test('renderSessionLine omits project name when cwd is undefined', () => {
 test('renderSessionLine displays git branch when present', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitBranch = 'main';
+  ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 0, behind: 0 };
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('git:('));
   assert.ok(line.includes('main'));
@@ -134,7 +143,7 @@ test('renderSessionLine displays git branch when present', () => {
 test('renderSessionLine omits git branch when null', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitBranch = null;
+  ctx.gitStatus = null;
   const line = renderSessionLine(ctx);
   assert.ok(!line.includes('git:('));
 });
@@ -142,7 +151,7 @@ test('renderSessionLine omits git branch when null', () => {
 test('renderSessionLine displays branch with slashes', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
-  ctx.gitBranch = 'feature/add-auth';
+  ctx.gitStatus = { branch: 'feature/add-auth', isDirty: false, ahead: 0, behind: 0 };
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('git:('));
   assert.ok(line.includes('feature/add-auth'));
@@ -360,3 +369,190 @@ test('renderToolsLine returns null when no tools exist', () => {
   const ctx = baseContext();
   assert.equal(renderToolsLine(ctx), null);
 });
+
+// Usage display tests
+test('renderSessionLine displays plan name in model bracket', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 23,
+    sevenDay: 45,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('Opus'), 'should include model name');
+  assert.ok(line.includes('Max'), 'should include plan name');
+});
+
+test('renderSessionLine displays usage percentages (7d hidden when low)', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 6,
+    sevenDay: 13,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(!line.includes('7d:'), 'should NOT include 7d when below 80%');
+  assert.ok(line.includes('6%'), 'should include 5h percentage');
+});
+
+test('renderSessionLine shows 7d when approaching limit (>=80%)', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('7d:'), 'should include 7d when >= 80%');
+  assert.ok(line.includes('85%'), 'should include 7d percentage');
+});
+
+test('renderSessionLine shows 5hr reset countdown', () => {
+  const ctx = baseContext();
+  const resetTime = new Date(Date.now() + 7200000); // 2 hours from now
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 20,
+    fiveHourResetAt: resetTime,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('2h'), 'should include reset countdown');
+});
+
+test('renderSessionLine displays limit reached warning', () => {
+  const ctx = baseContext();
+  const resetTime = new Date(Date.now() + 3600000); // 1 hour from now
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 100,
+    sevenDay: 45,
+    fiveHourResetAt: resetTime,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('Limit reached'), 'should show limit reached');
+  assert.ok(line.includes('resets'), 'should show reset time');
+});
+
+test('renderSessionLine displays -- for null usage values', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('--'), 'should show -- for null values');
+});
+
+test('renderSessionLine omits usage when usageData is null', () => {
+  const ctx = baseContext();
+  ctx.usageData = null;
+  const line = renderSessionLine(ctx);
+  assert.ok(!line.includes('5h:'), 'should not include 5h label');
+  assert.ok(!line.includes('7d:'), 'should not include 7d label');
+});
+
+test('renderSessionLine displays warning when API is unavailable', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    apiUnavailable: true,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('usage:'), 'should show usage label');
+  assert.ok(line.includes('⚠'), 'should show warning indicator');
+  assert.ok(!line.includes('5h:'), 'should not show 5h when API unavailable');
+});
+
+test('renderSessionLine hides usage when showUsage config is false (hybrid toggle)', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 25,
+    sevenDay: 10,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  // Even with usageData present, setting showUsage to false should hide it
+  ctx.config.display.showUsage = false;
+  const line = renderSessionLine(ctx);
+  assert.ok(!line.includes('5h:'), 'should not show usage when showUsage is false');
+  assert.ok(!line.includes('Pro'), 'should not show plan name when showUsage is false');
+});
+
+test('renderSessionLine uses buffered percent when autocompactBuffer is enabled', () => {
+  const ctx = baseContext();
+  // 10000 tokens / 200000 = 5% raw, + 22.5% buffer = 28% buffered (rounded)
+  ctx.stdin.context_window.current_usage.input_tokens = 10000;
+  ctx.config.display.autocompactBuffer = 'enabled';
+  const line = renderSessionLine(ctx);
+  // Should show ~28% (buffered), not 5% (raw)
+  assert.ok(line.includes('28%'), `expected buffered percent 28%, got: ${line}`);
+});
+
+test('renderSessionLine uses raw percent when autocompactBuffer is disabled', () => {
+  const ctx = baseContext();
+  // 10000 tokens / 200000 = 5% raw
+  ctx.stdin.context_window.current_usage.input_tokens = 10000;
+  ctx.config.display.autocompactBuffer = 'disabled';
+  const line = renderSessionLine(ctx);
+  // Should show 5% (raw), not 28% (buffered)
+  assert.ok(line.includes('5%'), `expected raw percent 5%, got: ${line}`);
+});
+
+test('render adds separator line when layout is separators and activity exists', () => {
+  const ctx = baseContext();
+  ctx.config.layout = 'separators';
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+  ];
+
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (line) => logs.push(line);
+  try {
+    render(ctx);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.ok(logs.length >= 2, 'should have at least 2 lines');
+  assert.ok(logs.some(l => l.includes('─')), 'should include separator character');
+});
+
+test('render omits separator when layout is separators but no activity', () => {
+  const ctx = baseContext();
+  ctx.config.layout = 'separators';
+
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (line) => logs.push(line);
+  try {
+    render(ctx);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(logs.length, 1, 'should only have session line');
+  assert.ok(!logs.some(l => l.includes('─')), 'should not include separator');
+});
+
